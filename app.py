@@ -527,7 +527,7 @@ def serve_bundle():
     
     response = Response(response_content)
     response.headers["Content-Type"] = "application/javascript; charset=UTF-8"
-    response.headers["Cache-Control"] = "public, max-age=86400"  # 1 day
+    response.headers["Cache-Control"] = "no-cache"  # Always revalidate - needed for dictionary compression testing
     
     # Always set Vary header for correct caching
     # Include Dictionary-ID in Vary since we use it for compression decisions
