@@ -36,6 +36,8 @@ import hashlib
 import base64
 import gzip
 import time
+import logging
+from datetime import datetime
 from functools import lru_cache
 from flask import Flask, request, Response, jsonify
 
@@ -43,6 +45,55 @@ import brotli
 import zstandard as zstd
 
 app = Flask(__name__)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+
+def log_request(endpoint: str, compression_used: str = None, extra_info: dict = None):
+    """Log incoming request with relevant headers and response info."""
+    client_ip = request.remote_addr
+    method = request.method
+    
+    # Key headers for dictionary compression
+    accept_encoding = request.headers.get("Accept-Encoding", "-")
+    available_dict = request.headers.get("Available-Dictionary", "-")
+    dict_id = request.headers.get("Dictionary-ID", "-")
+    user_agent = request.headers.get("User-Agent", "-")
+    
+    # Truncate user agent for readability
+    if len(user_agent) > 50:
+        user_agent = user_agent[:50] + "..."
+    
+    log_parts = [
+        f"[{endpoint}]",
+        f"IP={client_ip}",
+        f"Accept-Encoding={accept_encoding}",
+    ]
+    
+    # Only log dictionary headers if present (not "-")
+    if available_dict != "-":
+        # Truncate the hash for readability
+        if len(available_dict) > 20:
+            available_dict = available_dict[:20] + "..."
+        log_parts.append(f"Available-Dictionary={available_dict}")
+    
+    if dict_id != "-":
+        log_parts.append(f"Dictionary-ID={dict_id}")
+    
+    if compression_used:
+        log_parts.append(f"-> Response={compression_used}")
+    
+    if extra_info:
+        for key, value in extra_info.items():
+            log_parts.append(f"{key}={value}")
+    
+    logger.info(" | ".join(log_parts))
 
 # Configuration
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -316,6 +367,7 @@ def index():
 @app.route("/health")
 def health():
     """Health check endpoint."""
+    log_request("/health")
     return jsonify({"status": "ok", "timestamp": time.time()})
 
 
@@ -333,6 +385,7 @@ def serve_dictionary():
     try:
         content = load_file(DICTIONARY_FILE)
     except FileNotFoundError:
+        log_request("/dictionary.js", compression_used="404")
         return jsonify({"error": "Dictionary file not found. Run setup_files.py first."}), 404
     
     dict_hash = get_file_hash_base64(DICTIONARY_FILE)
@@ -374,6 +427,11 @@ def serve_dictionary():
     response.headers["X-Compressed-Size"] = str(len(response_content))
     response.headers["X-Dictionary-Hash"] = get_file_hash_hex(DICTIONARY_FILE)
     response.headers["X-Dictionary-ID"] = DICTIONARY_ID
+    
+    # Log the request
+    log_request("/dictionary.js", compression_used=content_encoding, extra_info={
+        "size": f"{len(content)}->{len(response_content)}"
+    })
     
     return response
 
@@ -481,6 +539,13 @@ def serve_bundle():
     response.headers["X-Dictionary-Hash-Match"] = "true" if has_matching_hash else "false"
     response.headers["X-Dictionary-ID-Match"] = "true" if has_matching_id else "false"
     response.headers["X-Dictionary-Full-Match"] = "true" if has_matching_dictionary else "false"
+    
+    # Log the request with detailed info
+    log_request("/bundle.js", compression_used=compression_type, extra_info={
+        "size": f"{original_size}->{compressed_size}",
+        "ratio": f"{compression_ratio:.2%}",
+        "dict_match": "YES" if has_matching_dictionary else "NO"
+    })
     
     return response
 
