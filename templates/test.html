@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shared Dictionary Compression Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 { color: #333; }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status { 
+            padding: 10px; 
+            border-radius: 4px; 
+            margin: 10px 0;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .pending { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        code {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .step {
+            margin: 15px 0;
+            padding-left: 20px;
+            border-left: 3px solid #007bff;
+        }
+        #log {
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Shared Dictionary Compression Test</h1>
+    
+    <div class="card">
+        <h2>How This Test Works</h2>
+        <div class="step">
+            <strong>Step 1:</strong> This page loads <code>/dictionary.js</code> as a script tag.
+            Chrome sees the <code>Use-As-Dictionary</code> header and caches the dictionary.
+        </div>
+        <div class="step">
+            <strong>Step 2:</strong> After a brief delay, the page loads <code>/bundle.js</code> as a script tag.
+            If Chrome has registered the dictionary, it will send <code>Available-Dictionary</code> and <code>Accept-Encoding: dcb, dcz</code> headers.
+        </div>
+        <div class="step">
+            <strong>Step 3:</strong> Check DevTools Network tab for the <code>/bundle.js</code> request to verify dictionary compression is working.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>What to Look For in DevTools</h2>
+        <p>Open <strong>DevTools > Network tab</strong> and look at the <code>/bundle.js</code> request:</p>
+        <ul>
+            <li><strong>Request Headers:</strong>
+                <ul>
+                    <li><code>Accept-Encoding</code> should include <code>dcb</code> and/or <code>dcz</code></li>
+                    <li><code>Available-Dictionary</code> should contain a base64 hash</li>
+                    <li><code>Dictionary-ID</code> should be <code>"dict-v1"</code></li>
+                </ul>
+            </li>
+            <li><strong>Response Headers:</strong>
+                <ul>
+                    <li><code>Content-Encoding</code> should be <code>dcb</code> or <code>dcz</code></li>
+                    <li><code>X-Compression-Type</code> shows what compression was used</li>
+                    <li><code>X-Dictionary-Full-Match</code> should be <code>true</code></li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>Test Status</h2>
+        <div id="status" class="status pending">Loading scripts...</div>
+        <h3>Log:</h3>
+        <div id="log"></div>
+    </div>
+
+    <div class="card">
+        <h2>Troubleshooting</h2>
+        <ul>
+            <li><strong>No <code>Available-Dictionary</code> header?</strong>
+                <ul>
+                    <li>Make sure "Disable cache" is <strong>OFF</strong> in DevTools</li>
+                    <li>Try refreshing the page (Cmd+R or F5) - the dictionary needs to be cached first</li>
+                    <li>Chrome needs HTTPS (which we have via cloudflared tunnel)</li>
+                </ul>
+            </li>
+            <li><strong>Still not working?</strong>
+                <ul>
+                    <li>Clear site data: DevTools > Application > Storage > Clear site data</li>
+                    <li>Close and reopen the tab</li>
+                    <li>Visit this page again and refresh once</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+        
+        function addLog(msg) {
+            const time = new Date().toLocaleTimeString();
+            log.textContent += `[${time}] ${msg}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        addLog('Page loaded, starting test...');
+        addLog('Step 1: Loading dictionary.js...');
+    </script>
+    
+    <!-- Step 1: Load the dictionary (Chrome will see Use-As-Dictionary header and cache it) -->
+    <script src="/dictionary.js" onload="addLog('Dictionary loaded successfully!')" onerror="addLog('ERROR: Failed to load dictionary!')"></script>
+    
+    <script>
+        // Step 2: Wait a moment for Chrome to register the dictionary, then load bundle.js
+        addLog('Step 2: Waiting 2 seconds for Chrome to register dictionary...');
+        
+        setTimeout(() => {
+            addLog('Step 3: Loading bundle.js (check Network tab for Available-Dictionary header)...');
+            
+            const script = document.createElement('script');
+            script.src = '/bundle.js';
+            script.onload = () => {
+                addLog('Bundle loaded successfully!');
+                addLog('');
+                addLog('=== TEST COMPLETE ===');
+                addLog('Check DevTools Network tab for /bundle.js request headers.');
+                addLog('Look for: Accept-Encoding containing "dcb" or "dcz"');
+                addLog('Look for: Available-Dictionary header');
+                
+                status.className = 'status success';
+                status.textContent = 'Scripts loaded! Check DevTools Network tab for /bundle.js to verify dictionary compression.';
+            };
+            script.onerror = () => {
+                addLog('ERROR: Failed to load bundle!');
+                status.className = 'status error';
+                status.textContent = 'Failed to load bundle.js';
+            };
+            document.body.appendChild(script);
+        }, 2000);
+    </script>
+</body>
+</html>

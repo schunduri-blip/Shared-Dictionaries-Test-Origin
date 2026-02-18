@@ -39,7 +39,7 @@ import time
 import logging
 from datetime import datetime
 from functools import lru_cache
-from flask import Flask, request, Response, jsonify
+from flask import Flask, request, Response, jsonify, render_template
 
 import brotli
 import zstandard as zstd
@@ -369,6 +369,19 @@ def health():
     """Health check endpoint."""
     log_request("/health")
     return jsonify({"status": "ok", "timestamp": time.time()})
+
+
+@app.route("/test")
+def test_page():
+    """
+    Serve the browser test page.
+    
+    This page loads dictionary.js and bundle.js as script tags,
+    which allows Chrome to properly use the dictionary compression
+    (since match-dest is set to "script").
+    """
+    log_request("/test")
+    return render_template("test.html")
 
 
 @app.route("/dictionary.js")
