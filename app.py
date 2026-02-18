@@ -404,18 +404,12 @@ def serve_dictionary():
     
     dict_hash = get_file_hash_base64(DICTIONARY_FILE)
     
-    # Determine response encoding (dictionary itself can be compressed normally)
-    accept_encoding = parse_accept_encoding(request.headers.get("Accept-Encoding", ""))
-    
+    # IMPORTANT: Serve dictionary UNCOMPRESSED
+    # Chrome needs the raw bytes to compute the SHA-256 hash and register the dictionary.
+    # If we compress it, Chrome decompresses for display but may not properly register
+    # the dictionary for future use. Pat Meenan's implementation also serves dictionaries
+    # uncompressed with a comment: "something weird is going on otherwise"
     response_content = content
-    content_encoding = "identity"
-    
-    if "br" in accept_encoding:
-        response_content = compress_brotli(content)
-        content_encoding = "br"
-    elif "gzip" in accept_encoding:
-        response_content = compress_gzip(content)
-        content_encoding = "gzip"
     
     response = Response(response_content)
     response.headers["Content-Type"] = "application/javascript; charset=UTF-8"
@@ -440,8 +434,7 @@ def serve_dictionary():
     # Vary header for cache correctness
     response.headers["Vary"] = "Accept-Encoding"
     
-    if content_encoding != "identity":
-        response.headers["Content-Encoding"] = content_encoding
+    # No Content-Encoding header since we're serving uncompressed
     
     # Metadata headers for debugging/testing
     response.headers["X-Original-Size"] = str(len(content))
@@ -450,8 +443,8 @@ def serve_dictionary():
     response.headers["X-Dictionary-ID"] = DICTIONARY_ID
     
     # Log the request
-    log_request("/dictionary.js", compression_used=content_encoding, extra_info={
-        "size": f"{len(content)}->{len(response_content)}"
+    log_request("/dictionary.js", compression_used="identity (uncompressed for dictionary registration)", extra_info={
+        "size": str(len(content))
     })
     
     return response
