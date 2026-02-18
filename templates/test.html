@@ -139,8 +139,9 @@
     <script src="/dictionary.js" onload="addLog('Dictionary loaded successfully!')" onerror="addLog('ERROR: Failed to load dictionary!')"></script>
     
     <script>
-        // Step 2: Wait a moment for Chrome to register the dictionary, then load bundle.js
-        addLog('Step 2: Waiting 2 seconds for Chrome to register dictionary...');
+        // Step 2: Wait for Chrome to register the dictionary, then load bundle.js
+        // RFC 9842 doesn't specify timing, but Chrome may need several seconds
+        addLog('Step 2: Waiting 5 seconds for Chrome to register dictionary...');
         
         setTimeout(() => {
             addLog('Step 3: Loading bundle.js (check Network tab for Available-Dictionary header)...');
@@ -164,7 +165,7 @@
                 status.textContent = 'Failed to load bundle.js';
             };
             document.body.appendChild(script);
-        }, 2000);
+        }, 5000);
     </script>
 </body>
 </html>

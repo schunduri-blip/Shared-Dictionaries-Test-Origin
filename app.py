@@ -107,7 +107,8 @@ DICTIONARY_ID = "dict-v1"
 # Match pattern for Use-As-Dictionary header - which URLs can use this dictionary
 DICTIONARY_MATCH_PATTERN = "/bundle.js"
 # Match destinations - restrict dictionary to specific fetch destinations
-DICTIONARY_MATCH_DEST = ["script"]  # Can be: document, script, style, etc.
+# Empty list = match all destinations (per RFC 9842 Section 2.1.2)
+DICTIONARY_MATCH_DEST = []  # Removed "script" restriction to simplify - matches all destinations
 
 # Compression settings
 BROTLI_QUALITY = 11  # 0-11, higher = better compression
@@ -421,12 +422,19 @@ def serve_dictionary():
     response.headers["Cache-Control"] = "public, max-age=604800"  # 7 days
     
     # Use-As-Dictionary header per RFC 9842
-    # Format: id="<id>", match="<pattern>", match-dest=("<dest1>" "<dest2>" ...)
-    # - id: Unique identifier for the dictionary (clients echo this back as Dictionary-ID)
-    # - match: URL pattern for resources that can use this dictionary
-    # - match-dest: Restrict to specific fetch destinations (optional)
-    match_dest_str = "(" + " ".join(f'"{dest}"' for dest in DICTIONARY_MATCH_DEST) + ")"
-    use_as_dict = f'id="{DICTIONARY_ID}", match="{DICTIONARY_MATCH_PATTERN}", match-dest={match_dest_str}'
+    # Format per RFC examples: match="<pattern>", match-dest=(...), id="<id>"
+    # - match: URL pattern for resources that can use this dictionary (REQUIRED)
+    # - match-dest: Restrict to specific fetch destinations (optional, empty = all)
+    # - id: Unique identifier for the dictionary (optional, clients echo as Dictionary-ID)
+    #
+    # RFC 9842 Section 2.1.2: "An empty list for match-dest MUST match all destinations"
+    # So we omit match-dest entirely when empty (equivalent to matching all)
+    if DICTIONARY_MATCH_DEST:
+        match_dest_str = "(" + " ".join(f'"{dest}"' for dest in DICTIONARY_MATCH_DEST) + ")"
+        use_as_dict = f'match="{DICTIONARY_MATCH_PATTERN}", match-dest={match_dest_str}, id="{DICTIONARY_ID}"'
+    else:
+        # Omit match-dest to match all destinations
+        use_as_dict = f'match="{DICTIONARY_MATCH_PATTERN}", id="{DICTIONARY_ID}"'
     response.headers["Use-As-Dictionary"] = use_as_dict
     
     # Vary header for cache correctness
