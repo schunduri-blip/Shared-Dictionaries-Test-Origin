@@ -2,7 +2,7 @@
 
 A simple Flask server for testing RFC 9842 shared dictionary compression (dcb/dcz) passthrough.
 
-Built to test pingora-origin's handling of dictionary-compressed responses. Inspired by [Pat Meenan's dictionary-worker](https://github.com/pmeenan/dictionary-worker).
+Inspired by [Pat Meenan's dictionary-worker](https://github.com/pmeenan/dictionary-worker).
 
 ## Quick Start
 
