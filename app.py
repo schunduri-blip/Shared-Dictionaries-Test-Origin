@@ -423,12 +423,8 @@ def serve_dictionary():
     #
     # RFC 9842 Section 2.1.2: "An empty list for match-dest MUST match all destinations"
     # So we omit match-dest entirely when empty (equivalent to matching all)
-    if DICTIONARY_MATCH_DEST:
-        match_dest_str = "(" + " ".join(f'"{dest}"' for dest in DICTIONARY_MATCH_DEST) + ")"
-        use_as_dict = f'match="{DICTIONARY_MATCH_PATTERN}", match-dest={match_dest_str}, id="{DICTIONARY_ID}"'
-    else:
-        # Omit match-dest to match all destinations
-        use_as_dict = f'match="{DICTIONARY_MATCH_PATTERN}", id="{DICTIONARY_ID}"'
+    
+    use_as_dict = f'match="{DICTIONARY_MATCH_PATTERN}", id="{DICTIONARY_ID}"'
     response.headers["Use-As-Dictionary"] = use_as_dict
     
     # Vary header for cache correctness
