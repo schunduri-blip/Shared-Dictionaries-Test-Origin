@@ -3,46 +3,47 @@
 Shared Dictionary Test Origin Server
 
 A Flask server for testing RFC 9842 shared dictionary compression passthrough.
-This server implements dictionary-based compression (dcb/dcz) for testing
-pingora-origin's passthrough support.
+This server serves PRE-COMPRESSED files from Pat Meenan's shared-brotli-test repo
+for testing pingora-origin's passthrough support.
+
+Pre-compressed files (in static/):
+    bundle.js       - 278,518 bytes (uncompressed)
+    bundle.js.sbr   - 1,976 bytes   (dictionary-compressed brotli, 99.3% reduction!)
+    bundle.js.br    - 82,312 bytes  (standard brotli)
+    bundle.js.gz    - 94,843 bytes  (gzip)
 
 Usage:
     python app.py [--port PORT] [--host HOST]
 
 Endpoints:
     GET /dictionary.js  - Returns dictionary file with Use-As-Dictionary header
-    GET /bundle.js      - Returns content with appropriate encoding based on headers
+    GET /bundle.js      - Returns pre-compressed content based on Accept-Encoding
     GET /health         - Health check endpoint
     GET /              - Info page with test instructions
 
 Headers:
     Request:
-        Accept-Encoding: br, dcb, dcz, gzip, identity
+        Accept-Encoding: br, dcb, gzip, identity
         Available-Dictionary: :<base64-sha256>:
 
     Response:
-        Content-Encoding: dcb | dcz | br | gzip | identity
+        Content-Encoding: dcb | br | gzip | identity
         Vary: Accept-Encoding, Available-Dictionary
         Use-As-Dictionary: match="/bundle.js" (on dictionary response)
         X-Original-Size: <size in bytes>
         X-Compressed-Size: <size in bytes>
         X-Compression-Ratio: <ratio>
-        X-Dictionary-Hash: <sha256 hex>
-        X-Compression-Type: dcb | dcz | br | gzip | identity
+        X-Compression-Type: dcb | br | gzip | identity
+        X-Serving-Mode: pre-compressed
 """
 
 import os
 import hashlib
 import base64
-import gzip
 import time
 import logging
-from datetime import datetime
 from functools import lru_cache
 from flask import Flask, request, Response, jsonify, render_template
-
-import brotli
-import zstandard as zstd
 
 app = Flask(__name__)
 
@@ -109,17 +110,27 @@ DICTIONARY_MATCH_PATTERN = "/bundle.js"
 # Empty list = match all destinations (per RFC 9842 Section 2.1.2)
 DICTIONARY_MATCH_DEST = []  # Removed "script" restriction to simplify - matches all destinations
 
-# Compression settings
-BROTLI_QUALITY = 11  # 0-11, higher = better compression
-ZSTD_LEVEL = 19  # 1-22, higher = better compression
+# Pre-compressed file extensions
+# These files are pre-generated from Pat Meenan's shared-brotli-test repo
+PRECOMPRESSED_FILES = {
+    "dcb": ".sbr",  # Dictionary-compressed brotli (dcb encoding)
+    "br": ".br",  # Standard brotli
+    "gzip": ".gz",  # Gzip
+}
 
 
-@lru_cache(maxsize=10)
+@lru_cache(maxsize=20)
 def load_file(filename: str) -> bytes:
     """Load a file from the static directory with caching."""
     filepath = os.path.join(STATIC_DIR, filename)
     with open(filepath, "rb") as f:
         return f.read()
+
+
+def file_exists(filename: str) -> bool:
+    """Check if a file exists in the static directory."""
+    filepath = os.path.join(STATIC_DIR, filename)
+    return os.path.exists(filepath)
 
 
 @lru_cache(maxsize=10)
@@ -137,118 +148,6 @@ def get_file_hash_hex(filename: str) -> str:
 def get_file_hash_base64(filename: str) -> str:
     """Get SHA-256 hash of a file (base64, as used in Available-Dictionary header)."""
     return base64.b64encode(get_file_hash(filename)).decode("ascii")
-
-
-def compress_brotli(content: bytes) -> bytes:
-    """Standard brotli compression."""
-    return brotli.compress(content, quality=BROTLI_QUALITY)
-
-
-def compress_gzip(content: bytes) -> bytes:
-    """Standard gzip compression."""
-    return gzip.compress(content, compresslevel=9)
-
-
-def compress_zstd(content: bytes) -> bytes:
-    """Standard zstd compression."""
-    cctx = zstd.ZstdCompressor(level=ZSTD_LEVEL)
-    return cctx.compress(content)
-
-
-def compress_dcb(content: bytes, dictionary: bytes) -> bytes:
-    """
-    Dictionary-compressed brotli (dcb) per RFC 9842.
-
-    Format:
-        - Magic header: 0xff 0x44 0x43 0x42 (\xffDCB)
-        - SHA-256 hash of dictionary (32 bytes)
-        - Brotli-compressed content using dictionary
-
-    Note: Uses subprocess to call the brotli CLI tool since the Python brotli
-    library doesn't expose the dictionary compression API directly.
-    """
-    import subprocess
-    import tempfile
-
-    # Magic header for dcb
-    magic = b"\xff\x44\x43\x42"  # \xffDCB
-
-    # SHA-256 hash of dictionary
-    dict_hash = hashlib.sha256(dictionary).digest()
-
-    # Use brotli CLI for dictionary compression
-    # brotli --stdout -D dictionary_file input_file
-    with tempfile.NamedTemporaryFile(delete=False) as dict_file:
-        dict_file.write(dictionary)
-        dict_file.flush()
-        dict_path = dict_file.name
-
-    with tempfile.NamedTemporaryFile(delete=False) as content_file:
-        content_file.write(content)
-        content_file.flush()
-        content_path = content_file.name
-
-    try:
-        result = subprocess.run(
-            [
-                "brotli",
-                "--stdout",
-                "-q",
-                str(BROTLI_QUALITY),
-                "-D",
-                dict_path,
-                content_path,
-            ],
-            capture_output=True,
-            check=True,
-        )
-        compressed = result.stdout
-    except FileNotFoundError:
-        # brotli CLI not installed, fall back to standard brotli compression
-        # and log a warning
-        import sys
-
-        print(
-            "WARNING: brotli CLI not found, dcb compression may not work correctly",
-            file=sys.stderr,
-        )
-        print(
-            "Install with: brew install brotli (macOS) or apt install brotli (Ubuntu)",
-            file=sys.stderr,
-        )
-        compressed = brotli.compress(content, quality=BROTLI_QUALITY)
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"brotli compression failed: {e.stderr.decode()}") from e
-    finally:
-        import os
-
-        os.unlink(dict_path)
-        os.unlink(content_path)
-
-    return magic + dict_hash + compressed
-
-
-def compress_dcz(content: bytes, dictionary: bytes) -> bytes:
-    """
-    Dictionary-compressed zstd (dcz) per RFC 9842.
-
-    Format:
-        - Magic header: 0x5e 0x2a 0x4d 0x18 0x20 0x00 0x00 0x00
-        - SHA-256 hash of dictionary (32 bytes)
-        - Zstd-compressed content using dictionary
-    """
-    # Magic header for dcz
-    magic = b"\x5e\x2a\x4d\x18\x20\x00\x00\x00"
-
-    # SHA-256 hash of dictionary
-    dict_hash = hashlib.sha256(dictionary).digest()
-
-    # Create dictionary and compress
-    zstd_dict = zstd.ZstdCompressionDict(dictionary)
-    cctx = zstd.ZstdCompressor(level=ZSTD_LEVEL, dict_data=zstd_dict)
-    compressed = cctx.compress(content)
-
-    return magic + dict_hash + compressed
 
 
 def parse_accept_encoding(header: str) -> set:
@@ -466,91 +365,99 @@ def serve_dictionary():
 @app.route("/bundle.js")
 def serve_bundle():
     """
-    Serve the bundle file with appropriate compression.
+    Serve the bundle file with appropriate compression using PRE-COMPRESSED files.
 
-    Compression selection logic (per RFC 9842 and Pat Meenan's implementation):
-    1. If client has matching dictionary (Available-Dictionary AND Dictionary-ID) AND supports dcb/dcz:
-       -> Return dictionary-compressed response (dcb preferred over dcz)
+    This implementation serves pre-compressed files from Pat Meenan's shared-brotli-test
+    repo instead of compressing on-the-fly. This ensures correct dictionary compression
+    without requiring the brotli CLI tool.
+
+    Pre-compressed files:
+        - bundle.js.sbr  (1,976 bytes)  - Dictionary-compressed brotli
+        - bundle.js.br   (82,312 bytes) - Standard brotli
+        - bundle.js.gz   (94,843 bytes) - Gzip
+        - bundle.js      (278,518 bytes) - Uncompressed
+
+    Compression selection logic (per RFC 9842):
+    1. If client has matching dictionary AND supports dcb:
+       -> Return pre-compressed .sbr file with Content-Encoding: dcb
     2. Else if client supports br:
-       -> Return standard brotli
+       -> Return pre-compressed .br file
     3. Else if client supports gzip:
-       -> Return gzip
+       -> Return pre-compressed .gz file
     4. Else:
-       -> Return uncompressed
-
-    Note: We check BOTH Available-Dictionary (hash) AND Dictionary-ID to ensure
-    the client has the correct dictionary. This matches Pat Meenan's worker behavior.
+       -> Return uncompressed bundle.js
     """
     try:
         content = load_file(BUNDLE_FILE)
-        dictionary = load_file(DICTIONARY_FILE)
     except FileNotFoundError:
         return jsonify({"error": "Files not found. Run setup_files.py first."}), 404
 
     accept_encoding = parse_accept_encoding(request.headers.get("Accept-Encoding", ""))
-    available_dict = parse_available_dictionary(
-        request.headers.get("Available-Dictionary")
+    available_dict_header = request.headers.get("Available-Dictionary")
+    available_dict = (
+        parse_available_dictionary(available_dict_header)
+        if available_dict_header
+        else None
     )
     dict_id = parse_dictionary_id(request.headers.get("Dictionary-ID"))
 
     # Check if client has our dictionary
-    # Must match BOTH the hash (Available-Dictionary) AND the ID (Dictionary-ID)
     has_matching_hash = dictionary_hash_matches(available_dict, DICTIONARY_FILE)
     has_matching_id = dictionary_id_matches(dict_id)
-
-    # For dictionary compression, we require both hash and ID to match
-    # This is consistent with Pat Meenan's worker implementation
     has_matching_dictionary = has_matching_hash and has_matching_id
 
-    # Determine compression method
+    # Determine which pre-compressed file to serve
     response_content = content
     content_encoding = "identity"
     compression_type = "identity"
+    original_size = len(content)
 
     if has_matching_dictionary and "dcb" in accept_encoding:
-        # Dictionary-compressed brotli
-        response_content = compress_dcb(content, dictionary)
-        content_encoding = "dcb"
-        compression_type = "dcb"
-    elif has_matching_dictionary and "dcz" in accept_encoding:
-        # Dictionary-compressed zstd
-        response_content = compress_dcz(content, dictionary)
-        content_encoding = "dcz"
-        compression_type = "dcz"
-    elif "br" in accept_encoding:
-        # Standard brotli
-        response_content = compress_brotli(content)
-        content_encoding = "br"
-        compression_type = "br"
-    elif "zstd" in accept_encoding:
-        # Standard zstd
-        response_content = compress_zstd(content)
-        content_encoding = "zstd"
-        compression_type = "zstd"
-    elif "gzip" in accept_encoding:
-        # Gzip fallback
-        response_content = compress_gzip(content)
-        content_encoding = "gzip"
-        compression_type = "gzip"
+        # Dictionary-compressed brotli - serve pre-compressed .sbr file
+        sbr_file = BUNDLE_FILE + ".sbr"
+        if file_exists(sbr_file):
+            response_content = load_file(sbr_file)
+            content_encoding = "dcb"
+            compression_type = "dcb"
+        else:
+            logger.warning(f"Pre-compressed file {sbr_file} not found, falling back")
+
+    if compression_type == "identity" and "br" in accept_encoding:
+        # Standard brotli - serve pre-compressed .br file
+        br_file = BUNDLE_FILE + ".br"
+        if file_exists(br_file):
+            response_content = load_file(br_file)
+            content_encoding = "br"
+            compression_type = "br"
+        else:
+            logger.warning(f"Pre-compressed file {br_file} not found, falling back")
+
+    if compression_type == "identity" and "gzip" in accept_encoding:
+        # Gzip - serve pre-compressed .gz file
+        gz_file = BUNDLE_FILE + ".gz"
+        if file_exists(gz_file):
+            response_content = load_file(gz_file)
+            content_encoding = "gzip"
+            compression_type = "gzip"
+        else:
+            logger.warning(f"Pre-compressed file {gz_file} not found, falling back")
 
     response = Response(response_content)
     response.headers["Content-Type"] = "application/javascript; charset=UTF-8"
-    response.headers["Cache-Control"] = "public, max-age=3600"  # Cache for 1 hour
+    response.headers["Cache-Control"] = "public, max-age=3600"
 
     # Always set Vary header for correct caching
-    # Include Dictionary-ID in Vary since we use it for compression decisions
     response.headers["Vary"] = "Accept-Encoding, Available-Dictionary, Dictionary-ID"
 
     if content_encoding != "identity":
         response.headers["Content-Encoding"] = content_encoding
 
     # If we used dictionary compression, echo back the dictionary hash
-    if compression_type in ("dcb", "dcz"):
+    if compression_type == "dcb":
         dict_hash_b64 = get_file_hash_base64(DICTIONARY_FILE)
         response.headers["Content-Dictionary"] = f":{dict_hash_b64}:"
 
     # Metadata headers for debugging/testing
-    original_size = len(content)
     compressed_size = len(response_content)
     compression_ratio = compressed_size / original_size if original_size > 0 else 1.0
 
@@ -560,6 +467,7 @@ def serve_bundle():
     response.headers["X-Compression-Type"] = compression_type
     response.headers["X-Dictionary-Hash"] = get_file_hash_hex(DICTIONARY_FILE)
     response.headers["X-Dictionary-ID"] = DICTIONARY_ID
+    response.headers["X-Serving-Mode"] = "pre-compressed"
 
     # Echo back what we received for debugging
     response.headers["X-Received-Accept-Encoding"] = request.headers.get(
