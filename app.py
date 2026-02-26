@@ -444,7 +444,8 @@ def serve_bundle():
 
     response = Response(response_content)
     response.headers["Content-Type"] = "application/javascript; charset=UTF-8"
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    # no-transform tells CDN not to modify/recompress the response
+    response.headers["Cache-Control"] = "public, max-age=3600, no-transform"
 
     # Always set Vary header for correct caching
     response.headers["Vary"] = "Accept-Encoding, Available-Dictionary, Dictionary-ID"
