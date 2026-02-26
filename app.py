@@ -402,9 +402,16 @@ def serve_bundle():
     dict_id = parse_dictionary_id(request.headers.get("Dictionary-ID"))
 
     # Check if client has our dictionary
+    # For variance testing: accept ANY Available-Dictionary hash, not just the real one
+    # This allows testing cache variance with different hashes hitting different cache slots
     has_matching_hash = dictionary_hash_matches(available_dict, DICTIONARY_FILE)
     has_matching_id = dictionary_id_matches(dict_id)
     has_matching_dictionary = has_matching_hash and has_matching_id
+
+    # VARIANCE TEST MODE: If client sends ANY Available-Dictionary header,
+    # treat it as a match so we return DCB. This lets us test cache variance
+    # with fake hashes that hit different cache slots.
+    has_any_dictionary = available_dict is not None
 
     # Determine which pre-compressed file to serve
     response_content = content
@@ -412,7 +419,9 @@ def serve_bundle():
     compression_type = "identity"
     original_size = len(content)
 
-    if has_matching_dictionary and "dcb" in accept_encoding:
+    # Use has_any_dictionary for variance testing (accepts any hash)
+    # Use has_matching_dictionary for strict mode (validates hash + ID)
+    if has_any_dictionary and "dcb" in accept_encoding:
         # Dictionary-compressed brotli - serve pre-compressed .sbr file
         sbr_file = BUNDLE_FILE + ".sbr"
         if file_exists(sbr_file):
