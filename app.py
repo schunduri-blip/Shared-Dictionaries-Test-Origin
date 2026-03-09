@@ -298,7 +298,8 @@ def test_page():
 
 
 @app.route("/dictionary.js")
-def serve_dictionary():
+@app.route("/<path:prefix>/dictionary.js")
+def serve_dictionary(prefix=None):
     """
     Serve the dictionary file with Use-As-Dictionary header.
 
@@ -363,7 +364,8 @@ def serve_dictionary():
 
 
 @app.route("/bundle.js")
-def serve_bundle():
+@app.route("/<path:prefix>/bundle.js")
+def serve_bundle(prefix=None):
     """
     Serve the bundle file with appropriate compression using PRE-COMPRESSED files.
 
