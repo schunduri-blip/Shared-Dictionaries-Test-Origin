@@ -267,10 +267,10 @@ def index():
                 "size_bytes": bundle_size,
             },
             "test_curl_commands": {
-                "1_fetch_dictionary": "curl -v http://localhost:8080/dictionary.js",
-                "2_fetch_bundle_with_dictionary_dcb": f'curl -v -H "Accept-Encoding: dcb, br, gzip" -H "Available-Dictionary: :{dict_hash}:" -H "Dictionary-ID: \\"{DICTIONARY_ID}\\"" http://localhost:8080/bundle.js',
-                "3_fetch_bundle_with_dictionary_dcz": f'curl -v -H "Accept-Encoding: dcz, br, gzip" -H "Available-Dictionary: :{dict_hash}:" -H "Dictionary-ID: \\"{DICTIONARY_ID}\\"" http://localhost:8080/bundle.js',
-                "4_fetch_bundle_standard": 'curl -v -H "Accept-Encoding: br, gzip" http://localhost:8080/bundle.js',
+                "1_fetch_dictionary": "curl -v http://localhost:80/dictionary.js",
+                "2_fetch_bundle_with_dictionary_dcb": f'curl -v -H "Accept-Encoding: dcb, br, gzip" -H "Available-Dictionary: :{dict_hash}:" -H "Dictionary-ID: \\"{DICTIONARY_ID}\\"" http://localhost:80/bundle.js',
+                "3_fetch_bundle_with_dictionary_dcz": f'curl -v -H "Accept-Encoding: dcz, br, gzip" -H "Available-Dictionary: :{dict_hash}:" -H "Dictionary-ID: \\"{DICTIONARY_ID}\\"" http://localhost:80/bundle.js',
+                "4_fetch_bundle_standard": 'curl -v -H "Accept-Encoding: br, gzip" http://localhost:80/bundle.js',
             },
             "dictionary_id": DICTIONARY_ID,
         }
@@ -516,7 +516,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Shared Dictionary Test Origin Server")
     parser.add_argument(
-        "--port", type=int, default=8080, help="Port to listen on (default: 8080)"
+        "--port", type=int, default=80, help="Port to listen on (default: 80)"
     )
     parser.add_argument(
         "--host", type=str, default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
