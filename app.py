@@ -114,6 +114,7 @@ DICTIONARY_MATCH_DEST = []  # Removed "script" restriction to simplify - matches
 # These files are pre-generated from Pat Meenan's shared-brotli-test repo
 PRECOMPRESSED_FILES = {
     "dcb": ".sbr",  # Dictionary-compressed brotli (dcb encoding)
+    "dcz": ".sbr",  # Dictionary-compressed zstd (dcz encoding) - reuses .sbr for passthrough testing
     "br": ".br",  # Standard brotli
     "gzip": ".gz",  # Gzip
 }
@@ -433,6 +434,20 @@ def serve_bundle(prefix=None):
         else:
             logger.warning(f"Pre-compressed file {sbr_file} not found, falling back")
 
+    if (
+        compression_type == "identity"
+        and has_any_dictionary
+        and "dcz" in accept_encoding
+    ):
+        # Dictionary-compressed zstd - reuse .sbr file with dcz encoding for passthrough testing
+        sbr_file = BUNDLE_FILE + ".sbr"
+        if file_exists(sbr_file):
+            response_content = load_file(sbr_file)
+            content_encoding = "dcz"
+            compression_type = "dcz"
+        else:
+            logger.warning(f"Pre-compressed file {sbr_file} not found, falling back")
+
     if compression_type == "identity" and "br" in accept_encoding:
         # Standard brotli - serve pre-compressed .br file
         br_file = BUNDLE_FILE + ".br"
@@ -465,7 +480,7 @@ def serve_bundle(prefix=None):
         response.headers["Content-Encoding"] = content_encoding
 
     # If we used dictionary compression, echo back the dictionary hash
-    if compression_type == "dcb":
+    if compression_type in ("dcb", "dcz"):
         dict_hash_b64 = get_file_hash_base64(DICTIONARY_FILE)
         response.headers["Content-Dictionary"] = f":{dict_hash_b64}:"
 
