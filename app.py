@@ -513,13 +513,27 @@ def serve_bundle():
 
 if __name__ == "__main__":
     import argparse
+    import ssl
+    import threading
 
     parser = argparse.ArgumentParser(description="Shared Dictionary Test Origin Server")
     parser.add_argument(
-        "--port", type=int, default=80, help="Port to listen on (default: 80)"
+        "--port", type=int, default=80, help="HTTP port to listen on (default: 80)"
+    )
+    parser.add_argument(
+        "--https-port",
+        type=int,
+        default=443,
+        help="HTTPS port to listen on (default: 443)",
     )
     parser.add_argument(
         "--host", type=str, default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)"
+    )
+    parser.add_argument(
+        "--cert", type=str, default="certs/cert.pem", help="Path to SSL certificate"
+    )
+    parser.add_argument(
+        "--key", type=str, default="certs/key.pem", help="Path to SSL private key"
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
@@ -546,6 +560,31 @@ if __name__ == "__main__":
     print(f"  Size:     {len(load_file(BUNDLE_FILE)):,} bytes")
     print("=" * 60)
     print(f"Listening on http://{args.host}:{args.port}")
+
+    # Start HTTPS server in a background thread if certs exist
+    cert_path = os.path.join(os.path.dirname(__file__), args.cert)
+    key_path = os.path.join(os.path.dirname(__file__), args.key)
+
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        print(f"Listening on https://{args.host}:{args.https_port}")
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_context.load_cert_chain(cert_path, key_path)
+
+        def run_https():
+            app.run(
+                host=args.host,
+                port=args.https_port,
+                ssl_context=ssl_context,
+                debug=False,
+                use_reloader=False,
+            )
+
+        https_thread = threading.Thread(target=run_https, daemon=True)
+        https_thread.start()
+    else:
+        print(f"WARNING: SSL certs not found at {cert_path}, {key_path}")
+        print("HTTPS server not started. Only HTTP available.")
+
     print("=" * 60)
 
     app.run(host=args.host, port=args.port, debug=args.debug)
